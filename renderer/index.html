@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webpack Decompiler</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>Webpack Decompiler</h1>
+            <div class="toolbar">
+                <button id="openBtn" class="btn">Open File</button>
+                <button id="saveBtn" class="btn" disabled>Save File</button>
+                <button id="decompileBtn" class="btn primary" disabled>Decompile</button>
+            </div>
+        </header>
+
+        <div class="content">
+            <div class="file-info">
+                <span id="filePath">No file selected</span>
+            </div>
+
+            <div class="editor-container">
+                <div class="editor-section">
+                    <h2>Original Code</h2>
+                    <textarea id="originalCode" spellcheck="false"></textarea>
+                </div>
+
+                <div class="editor-section">
+                    <h2>Decompiled Code</h2>
+                    <textarea id="decompiledCode" spellcheck="false" readonly></textarea>
+                </div>
+            </div>
+
+            <div class="module-tree-container" id="moduleTreeContainer" style="display: none;">
+                <h2>Module Dependencies</h2>
+                <div id="moduleTree" class="module-tree"></div>
+            </div>
+        </div>
+
+        <div class="status-bar">
+            <span id="statusMessage">Ready</span>
+        </div>
+    </div>
+
+    <script src="main.js"></script>
+</body>
+
+</html>
