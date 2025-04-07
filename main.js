@@ -105,16 +105,32 @@ ipcMain.handle('save-file', async (event, { filePath, content }) => {
     }
 })
 
+const { decompileWebpack, beautifyJs } = require('./utils/decompiler');
 /**
  * 处理反编译请求
  */
 ipcMain.handle('decompile', async (event, { content }) => {
     try {
-        const { decompileWebpack } = require('./utils/decompiler')
-        const result = await decompileWebpack(content)
-        return { success: true, result }
+        // 确保导入语句包含 beautifyJs
+       
+        const result = await decompileWebpack(content);
+
+        // 确保返回有效的字符串
+        const decompiledCode = result.code || beautifyJs(content);
+
+        return {
+            success: true,
+            result: decompiledCode,
+            modules: result.modules || [],
+            warnings: result.warnings || []
+        };
     } catch (error) {
-        console.error('Decompilation error:', error)
-        return { success: false, error: error.message }
+        return {
+            success: false,
+            error: error.message,
+            result: beautifyJs(content), // 保证返回可显示的代码
+            modules: [],
+            warnings: [`Fatal error: ${error.message}`]
+        };
     }
-})
+});

@@ -6,31 +6,42 @@ const { walk } = require('acorn-walk')
 const MagicString = require('magic-string')
 const estraverse = require('estraverse')
 
+
 /**
  * 主反编译函数
  * @param {string} code - 要反编译的代码
  * @returns {Promise<{code: string, modules: Array}>} - 反编译后的代码和模块信息
  */
-async function decompileWebpack(code) {
-    // 确保输入是字符串
-    if (typeof code !== 'string') {
-        console.warn('decompileWebpack received non-string input:', code)
-        code = String(code)
+async function decompileWebpack(input) {
+    let code = typeof input === 'string' ? input :
+        (input && typeof input.content === 'string' ? input.content : String(input));
+
+    // 1. 尝试Webpack5解析
+    let webpack5Result = await tryParseWebpack5(code);
+
+    // 2. 如果解析失败，回退到美化原始代码
+    if (!webpack5Result) {
+        console.log('Falling back to basic beautification');
+        return {
+            code: beautifyJs(code),
+            modules: [],
+            warnings: ['Webpack 5 parsing failed, using fallback']
+        };
     }
 
-    // 1. 尝试识别Webpack 5格式
-    const webpack5Result = await tryParseWebpack5(code)
-    if (webpack5Result) {
-        return webpack5Result
-    }
+    // 3. 处理模块（将处理逻辑移到函数内部）
+    const processedModules = webpack5Result.modules.map(mod => ({
+        id: mod.id || 'anonymous',
+        code: beautifyJs(renameParameters(mod.code)), // 确保先重命名再美化
+        dependencies: extractDependencies(mod.code) || [],
+        originalCode: mod.code
+    }));
 
-    // 2. 尝试识别其他Webpack格式或普通JS
     return {
-        code: beautifyJs(code),
-        modules: []
-    }
+        code: generateMergedCode(processedModules),
+        modules: processedModules
+    };
 }
-
 /**
  * 尝试解析Webpack 5格式的代码
  * @param {string} code - 要解析的代码
@@ -38,52 +49,34 @@ async function decompileWebpack(code) {
  */
 async function tryParseWebpack5(code) {
     try {
-        // 检查是否是Webpack 5格式
         if (!isWebpack5Format(code)) {
-            return null
+            return null;
         }
 
-        // 解析Webpack 5模块
-        const modules = parseWebpack5(code)
+        const modules = parseWebpack5(code);
 
-        // 处理每个模块
-        const processedModules = modules.map(module => {
-            // 确保模块代码存在
-            const moduleCode = module.code || ''
+        // 添加null检查
+        if (!modules || !Array.isArray(modules)) {
+            console.warn('No valid modules extracted from Webpack 5 code');
+            return null;
+        }
 
-            // 重命名参数
-            const renamedCode = renameParameters(moduleCode)
-
-            // 提取依赖关系
-            const dependencies = extractDependencies(renamedCode)
-
-            // 美化代码
-            const beautified = beautifyJs(renamedCode)
-
-            return {
-                id: module.id,
-                code: beautified,
-                dependencies,
-                originalCode: moduleCode
-            }
-        })
-
-        // 生成合并后的代码
-        const mergedCode = generateMergedCode(processedModules)
+        // 确保每个模块都有代码
+        const validModules = modules.filter(m => m && m.code);
+        if (validModules.length === 0) {
+            console.warn('All modules were empty');
+            return null;
+        }
 
         return {
-            code: mergedCode,
-            modules: processedModules.map(m => ({
-                id: m.id,
-                dependencies: m.dependencies
-            }))
-        }
+            code: generateMergedCode(validModules),
+            modules: validModules
+        };
     } catch (error) {
-        console.error('Webpack 5 parsing failed:', error)
-        return null
+        console.error('Webpack 5 parsing failed:', error);
+        return null;
     }
 }
-
 /**
  * 检查是否是Webpack 5格式
  * @param {string} code - 要检查的代码
@@ -99,42 +92,69 @@ function isWebpack5Format(code) {
  * @param {string} code - 模块代码
  * @returns {string} - 重命名后的代码
  */
+// 修复1：删除底部重复的 tryParseWebpack5 函数定义（约 373-389 行）
+// 原函数已在 50-72 行定义
+// 修复2：修改 AST 遍历方式（约 128-146 行）
 function renameParameters(code) {
-    // 确保输入是字符串
-    if (typeof code !== 'string') {
-        console.warn('renameParameters received non-string input:', code)
-        return String(code)
-    }
-
+    if (typeof code !== 'string') return code;
+    
     try {
-        // 使用acorn解析AST
         const ast = parse(code, {
-            ecmaVersion: 'latest',
-            sourceType: 'module'
-        })
+            ecmaVersion: 'latest',  // 改为字符串类型
+            sourceType: 'script',
+            allowReturnOutsideFunction: true,
+            allowAwaitOutsideFunction: true,
+            allowImportExportEverywhere: true,
+            allowHashBang: true
+        });
 
-        // 使用MagicString进行源码转换
-        const magicString = new MagicString(code)
+        const magicString = new MagicString(code);
 
-        // 遍历AST查找函数参数
-        walk(ast, {
-            FunctionDeclaration(node) {
-                renameFunctionParams(node, magicString)
-            },
-            FunctionExpression(node) {
-                renameFunctionParams(node, magicString)
-            },
-            ArrowFunctionExpression(node) {
-                renameFunctionParams(node, magicString)
+        // 使用更安全的遍历方式
+        walk.ancestor(ast, {
+            Function(node, ancestors) {
+                try {
+                    if (node.type === 'FunctionDeclaration' || 
+                        node.type === 'FunctionExpression' ||
+                        node.type === 'ArrowFunctionExpression') 
+                    {
+                        // 添加参数有效性检查
+                        if (node.params && Array.isArray(node.params)) {
+                            renameFunctionParams(node, magicString)
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Parameter rename error:', e.message);
+                }
             }
-        })
+        });
 
-        return magicString.toString()
+        // 增强代码规范化（新增Webpack模块包装处理）
+        let result = magicString.toString()
+            // 处理Webpack模块工厂函数
+            .replace(/(\d+):\s*\(([ertan]+),\s*(\w+),\s*\w+\)\s*=>\s*{/g, '/* WEBPACK MODULE $1 */ (function(__webpack_exports__, __webpack_require__) {')
+            .replace(/([^;\n])(\n|$)/g, '$1;\n')
+            // 修复对象方法转换（处理生成器函数和异步函数）
+            .replace(/(\w+)\s*:\s*(async\s+)?function\s*(\*?)\s*([^(]*?)\s*{/g, (match, p1, p2, p3, p4) => {
+                // 保留原始缩进和空格
+                const asyncKeyword = p2 ? p2.trim() + ' ' : '';
+                const generatorStar = p3 ? p3.trim() + ' ' : '';
+                return `${asyncKeyword}function ${generatorStar}${p1}${p4} {`;
+            })
+            // 修复箭头函数格式
+            .replace(/=>\s*{/g, ' => {')
+            // 添加分号检查
+            .replace(/([^\s;}])$/gm, '$1;');
+
+        // 添加临时调试日志
+        console.log('[DEBUG] Post-normalization code:', result.slice(0, 500));
+        return result;
     } catch (error) {
-        console.error('Parameter renaming failed:', error)
-        return code
+        console.warn('Deep parsing failed:', error.message);
+        return code;
     }
 }
+
 
 /**
  * 重命名函数参数
@@ -191,8 +211,9 @@ function extractDependencies(code) {
     try {
         const ast = parse(code, {
             ecmaVersion: 'latest',
-            sourceType: 'module'
-        })
+            sourceType: 'module',
+            allowHashBang: true  // 添加此配置
+        });
 
         // 遍历AST查找require调用
         estraverse.traverse(ast, {
@@ -257,18 +278,26 @@ function beautifyJs(code) {
  * @returns {string} - 合并后的代码
  */
 function generateMergedCode(modules) {
-    let output = '// Decompiled Webpack modules\n\n'
+    if (!modules || modules.length === 0) {
+        return "// No modules found\n";
+    }
 
-    // 添加每个模块
-    modules.forEach(module => {
-        output += `// Module ID: ${module.id}\n`
-        output += `// Dependencies: ${module.dependencies.join(', ') || 'none'}\n`
-        output += `${module.code}\n\n`
-    })
+    return modules.map(module => {
+        // 添加空值检查和默认值
+        const params = (module.params || []).join(', ');
+        const deps = (module.dependencies || []).join(', ') || 'none';
 
-    return output
+        const moduleHeader = `// ======== Module ${module.id || 'anonymous'} ========\n` +
+            `// Parameters: ${params}\n` +  // 修复这里的问题
+            `// Dependencies: ${deps}\n`;
+
+        return moduleHeader + (module.code || '// Empty module\n');
+    }).join('\n\n');
 }
 
+// 修复3：确保模块导出正确（文件底部）
 module.exports = {
-    decompileWebpack
-}
+    decompileWebpack,
+    beautifyJs,
+    extractDependencies
+};

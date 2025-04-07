@@ -7,70 +7,52 @@ const MagicString = require('magic-string')
  * @param {string} code - 要解析的代码
  * @returns {Array<{id: string, code: string}>} - 解析出的模块列表
  */
+// 在 webpack5.js 中
 function parseWebpack5(code) {
-    // 1. 提取Webpack chunk数组
-    const chunkRegex = /\(global\["webpackChunk\w*"\]\s*=\s*global\["webpackChunk\w*"\]\s*\|\|\s*\[\]\)\.push\(\[\[(\d+)\],\s*({[^}]+})\)/g
-    const chunks = []
-    let match
+    // 需要确保能正确提取这种格式的模块：
+    // {91:(e,t,a)=>{...}, 5171:(e,t,a)=>{...}}
+    const moduleRegex = /(\d+):\s*\(([ertan]+),\s*(\w+),\s*\w+\)\s*=>\s*{/g;
+    
+    try {
+        // 改进chunk正则，支持更多括号变体
+        const chunkRegex = /(?:global|\(global\))\["webpackChunk\w+"\]\s*=\s*\S+?\s*\.push\(\[\[(\d+)\],\s*({[\s\S]+?})\]\)/;
+        const match = chunkRegex.exec(code);
+        if (!match) return null;
 
-    while ((match = chunkRegex.exec(code)) !== null) {
-        const chunkId = match[1]
-        const modulesObjStr = match[2]
-        chunks.push({ chunkId, modulesObjStr })
-    }
+        const modulesObjStr = match[2];
+        // 移动调试日志到变量声明之后
+        console.log('Parsing chunk:', code.slice(0, 200) + '...');
+        console.log('Module object string:', modulesObjStr?.slice(0, 500) + '...');
 
-    if (chunks.length === 0) {
-        throw new Error('No Webpack 5 chunks found')
-    }
+        const modules = [];
 
-    // 2. 解析模块对象
-    const modules = []
-    chunks.forEach(chunk => {
-        // 将模块对象字符串转换为可解析的代码
-        const objCode = `let modules = ${chunk.modulesObjStr}`
+        // 强化模块正则表达式
+        const moduleRegex = /(\d+):\s*(?:function\s*\(([^)]*)\)|\(([^)]*)\)\s*=>)\s*{([\s\S]+?)}(?=,\s*\d+:|}\s*\)|\s*\]|$)/g;
 
-        try {
-            // 使用acorn解析对象
-            const ast = parse(objCode, {
-                ecmaVersion: 'latest',
-                sourceType: 'script'
-            })
+        let moduleMatch;
+        while ((moduleMatch = moduleRegex.exec(modulesObjStr)) !== null) {
+            const params = (moduleMatch[2] || moduleMatch[3]).trim();
+            let functionBody = moduleMatch[4]
+                .replace(/^\{/, '')
+                .replace(/\}\s*\)?$/, '')
+                .trim()
+                // 添加代码规范化
+                .replace(/([^;])(\n|$)/g, '$1;\n')
+                .replace(/(\b\w+\b)\s*:\s*function/g, 'function $1');
 
-            // 查找对象表达式
-            let modulesObj = null
-            walk.simple(ast, {
-                VariableDeclarator(node) {
-                    if (node.id.name === 'modules' && node.init.type === 'ObjectExpression') {
-                        modulesObj = node.init
-                    }
-                }
-            })
-
-            if (!modulesObj) {
-                throw new Error('Failed to find modules object')
-            }
-
-            // 提取每个模块
-            modulesObj.properties.forEach(prop => {
-                if (prop.key.type === 'Literal') {
-                    modules.push({
-                        id: prop.key.value,
-                        code: extractFunctionCode(prop.value, code)
-                    })
-                } else if (prop.key.type === 'Identifier' || prop.key.type === 'NumericLiteral') {
-                    modules.push({
-                        id: prop.key.name || prop.key.value,
-                        code: extractFunctionCode(prop.value, code)
-                    })
-                }
-            })
-        } catch (error) {
-            console.error(`Error parsing chunk ${chunk.chunkId}:`, error)
-            throw new Error(`Failed to parse Webpack 5 modules: ${error.message}`)
+            // 修复非法函数名问题
+            modules.push({
+                id: moduleMatch[1],
+                code: `(function(${params}) {\n${functionBody}\n})`, // 使用匿名函数表达式
+                params: params.split(',').map(p => p.trim())
+            });
         }
-    })
 
-    return modules
+        return modules.length > 0 ? modules : null;
+    } catch (error) {
+        console.error('Webpack 5 parsing error:', error);
+        return null;
+    }
 }
 
 /**
@@ -99,6 +81,30 @@ function extractFunctionCode(node, originalCode) {
         return ''
     }
 }
+
+function generateMergedCode(modules) {
+    if (!modules || !modules.length) return "// No modules found\n"
+
+    return modules.map(m => {
+        return `// Module ID: ${m.id || 'anonymous'}
+// Dependencies: ${m.dependencies?.join(', ') || 'none'}
+${m.code || '// Empty module'}
+`
+    }).join('\n\n')
+}
+
+// 在 webpack5.js 中添加这些测试正则
+function testRegexes(code) {
+    // 测试整体匹配
+    const chunkTest = /\(?global\["webpackChunk(\w+)"\]\s*=\s*global\["webpackChunk\1"\]\s*\|\|\s*\[\]\)?\.push\(\[\[(\d+)\],\s*({[\s\S]+?})\)\]\)/;
+
+    // 测试模块匹配
+    const moduleTest = /(\d+):\s*\(?function\s*\(([^)]*)\)\s*=>\s*{([\s\S]+?)(?=,\d+:|}\s*})/;
+
+    console.log('Chunk test:', chunkTest.test(code));
+    console.log('Module test:', moduleTest.test(code));
+}
+
 module.exports = {
     parseWebpack5
 }

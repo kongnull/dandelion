@@ -78,37 +78,40 @@ document.addEventListener('DOMContentLoaded', () => {
     })
 
     // 反编译
+    // 修改 decompileBtn 的点击事件处理
     decompileBtn.addEventListener('click', async () => {
         if (!currentFile.originalContent) return
 
         updateStatus('Decompiling...')
         decompileBtn.disabled = true
+        decompiledCodeElement.value = 'Decompiling... Please wait'
 
         try {
-            const result = await window.electronAPI.decompile({
+            const response = await window.electronAPI.decompile({
                 content: currentFile.originalContent
             })
 
-            if (!result.success) {
-                throw new Error(result.error || 'Decompilation failed')
+            if (!response.success) {
+                throw new Error(response.error || 'Decompilation failed')
             }
 
-            // 更新UI状态
-            currentFile.decompiledContent = result.result.code
-            currentFile.modules = result.result.modules
-
-            decompiledCodeElement.value = currentFile.decompiledContent
+            // 直接显示反编译结果
+            currentFile.decompiledContent = response.result
+            decompiledCodeElement.value = response.result
             saveBtn.disabled = false
 
-            // 显示模块依赖关系
-            if (currentFile.modules && currentFile.modules.length > 0) {
-                renderModuleTree(currentFile.modules)
+            // 显示模块树
+            if (response.modules?.length > 0) {
+                renderModuleTree(response.modules)
                 moduleTreeContainer.style.display = 'block'
             }
 
             updateStatus('Decompilation completed successfully')
         } catch (error) {
-            showError(error.message)
+            const errorMessage = `Decompilation error: ${error.message}`
+            showError(errorMessage)
+            decompiledCodeElement.value = errorMessage
+            updateStatus('Decompilation failed')
         } finally {
             decompileBtn.disabled = false
         }
@@ -134,6 +137,11 @@ document.addEventListener('DOMContentLoaded', () => {
             moduleItem.appendChild(moduleDeps)
             moduleTree.appendChild(moduleItem)
         })
+
+        console.log('Received from main:', {
+            result: typeof result,
+            modules: modules?.length
+        });
     }
 
     // 更新状态消息
