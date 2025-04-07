@@ -12,6 +12,12 @@ const estraverse = require('estraverse')
  * @returns {Promise<{code: string, modules: Array}>} - 反编译后的代码和模块信息
  */
 async function decompileWebpack(code) {
+    // 确保输入是字符串
+    if (typeof code !== 'string') {
+        console.warn('decompileWebpack received non-string input:', code)
+        code = String(code)
+    }
+
     // 1. 尝试识别Webpack 5格式
     const webpack5Result = await tryParseWebpack5(code)
     if (webpack5Result) {
@@ -42,8 +48,11 @@ async function tryParseWebpack5(code) {
 
         // 处理每个模块
         const processedModules = modules.map(module => {
+            // 确保模块代码存在
+            const moduleCode = module.code || ''
+
             // 重命名参数
-            const renamedCode = renameParameters(module.code)
+            const renamedCode = renameParameters(moduleCode)
 
             // 提取依赖关系
             const dependencies = extractDependencies(renamedCode)
@@ -55,7 +64,7 @@ async function tryParseWebpack5(code) {
                 id: module.id,
                 code: beautified,
                 dependencies,
-                originalCode: module.code
+                originalCode: moduleCode
             }
         })
 
@@ -91,6 +100,12 @@ function isWebpack5Format(code) {
  * @returns {string} - 重命名后的代码
  */
 function renameParameters(code) {
+    // 确保输入是字符串
+    if (typeof code !== 'string') {
+        console.warn('renameParameters received non-string input:', code)
+        return String(code)
+    }
+
     try {
         // 使用acorn解析AST
         const ast = parse(code, {
@@ -165,6 +180,12 @@ function renameFunctionParams(node, magicString) {
  * @returns {Array<string>} - 依赖列表
  */
 function extractDependencies(code) {
+    // 确保输入是字符串
+    if (typeof code !== 'string') {
+        console.warn('extractDependencies received non-string input:', code)
+        return []
+    }
+
     const dependencies = new Set()
 
     try {
@@ -198,25 +219,36 @@ function extractDependencies(code) {
  * @returns {string} - 美化后的代码
  */
 function beautifyJs(code) {
-    return js_beautify(code, {
-        indent_size: 2,
-        space_in_empty_paren: true,
-        preserve_newlines: true,
-        max_preserve_newlines: 2,
-        keep_array_indentation: false,
-        break_chained_methods: false,
-        indent_scripts: 'normal',
-        brace_style: 'collapse,preserve-inline',
-        space_before_conditional: true,
-        unescape_strings: false,
-        jslint_happy: false,
-        end_with_newline: false,
-        wrap_line_length: 0,
-        indent_empty_lines: false,
-        comma_first: false,
-        e4x: false,
-        indent_with_tabs: false
-    })
+    // 确保输入是字符串
+    if (typeof code !== 'string') {
+        console.warn('beautifyJs received non-string input:', code)
+        code = String(code)
+    }
+
+    try {
+        return js_beautify(code, {
+            indent_size: 2,
+            space_in_empty_paren: true,
+            preserve_newlines: true,
+            max_preserve_newlines: 2,
+            keep_array_indentation: false,
+            break_chained_methods: false,
+            indent_scripts: 'normal',
+            brace_style: 'collapse,preserve-inline',
+            space_before_conditional: true,
+            unescape_strings: false,
+            jslint_happy: false,
+            end_with_newline: false,
+            wrap_line_length: 0,
+            indent_empty_lines: false,
+            comma_first: false,
+            e4x: false,
+            indent_with_tabs: false
+        })
+    } catch (error) {
+        console.error('Code beautification failed:', error)
+        return code // 返回原始代码作为回退
+    }
 }
 
 /**

@@ -82,20 +82,23 @@ function parseWebpack5(code) {
 function extractFunctionCode(node, originalCode) {
     const magicString = new MagicString(originalCode)
 
-    if (node.type === 'FunctionExpression' || node.type === 'ArrowFunctionExpression') {
-        // 提取整个函数
-        return magicString.slice(node.start, node.end)
-    } else if (node.type === 'CallExpression') {
-        // 可能是立即调用的函数表达式 (IIFE)
-        if (node.callee.type === 'FunctionExpression' || node.callee.type === 'ArrowFunctionExpression') {
-            return magicString.slice(node.callee.start, node.callee.end)
+    try {
+        if (node.type === 'FunctionExpression' || node.type === 'ArrowFunctionExpression') {
+            return magicString.slice(node.start, node.end).toString()
+        } else if (node.type === 'CallExpression') {
+            if (node.callee.type === 'FunctionExpression' || node.callee.type === 'ArrowFunctionExpression') {
+                return magicString.slice(node.callee.start, node.callee.end).toString()
+            }
         }
+
+        // 默认返回节点对应的代码
+        const result = magicString.slice(node.start, node.end).toString()
+        return result || '' // 确保不返回undefined
+    } catch (error) {
+        console.error('Error extracting function code:', error)
+        return ''
     }
-
-    // 默认返回节点对应的代码
-    return magicString.slice(node.start, node.end)
 }
-
 module.exports = {
     parseWebpack5
 }
