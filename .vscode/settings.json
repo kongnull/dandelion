@@ -1,0 +1,53 @@
+{
+    // 主题设置
+    // "workbench.colorTheme": "Active4D",
+    // 编辑器字体配置
+
+    // 窗口缩放设置
+    "window.zoomLevel": 1,
+
+    "editor.fontFamily": "Consolas, Courier, monospace, Monaco,'Courier New', Menlo, Mono, 'source-code-pro'",
+    // "editor.fontFamily": "'Fira Code', 'Courier New', monospace",
+    // "editor.fontFamily": "'Courier New',Menlo, 'Fira Code',   monospace, Monaco",
+
+    "editor.fontSize": 14,
+    "editor.fontLigatures": true,
+    "editor.fontWeight": "normal",
+
+    // 行高配置
+    "editor.lineHeight": 20, // 1.5 倍行高（14 * 1.5 = 21）
+    
+    // 工作区颜色配置
+    "workbench.colorCustomizations": {
+        "editor.findMatchBorder": "#0091ff",
+        "editor.selectionBackground": "#4da3f883",
+        "editor.findMatchHighlightForeground": "#f947476b",
+        "editor.findRangeHighlightBackground": "#9ca9f64d",
+        "editor.findMatchBackground": "#c4e7f949",
+        "editor.findMatchForeground": "#ee2a1c48",
+        "editor.selectionForeground": "#32b2ee49",
+        "editor.selectionHighlightBorder": "#581adec0",
+        "editor.findMatchHighlightBorder": "#d5c9efc0",
+        "editor.findRangeHighlightBorder": "#36c3d08f",
+        "editor.inlineValuesForeground": "#9bf5c0c0",
+        "editorOverviewRuler.selectionHighlightForeground": "#f196965f",
+
+        "editorIndentGuide.activeBackground1": "#0073ff", // 活动状态的指南线颜色
+        "editorIndentGuide.background1": "#bdbdbd42", // 非活动状态的指南线颜色
+        "editorIndentGuide.activeBackground2": "#4800ff9d", // 第二层活动指南线颜色
+        "editorIndentGuide.background2": "#bdbdbd42", // 第二层非活动指南线颜色
+
+        // 搜索和选中对象的背景色配置
+        "editor.findMatchHighlightBackground": "#fadd3a1c", // 搜索匹配项的背景色
+        "editor.selectionHighlightBackground": "#33a1ef74" // 选中对象的背景色
+    },
+    "path-intellisense.mappings": {
+        "@utils": "${workspaceRoot}/background/utils/*",
+        "@presenter": "${workspaceRoot}/background/presenter/*",
+        "@db": "${workspaceRoot}/background/db/*",
+        "@api": "${workspaceRoot}/background/api/*",
+        "@ipc": "${workspaceRoot}/background/ipc/*",
+        "@server": "${workspaceRoot}/background/ipc/*",
+        "@models": "${workspaceRoot}/background/db/models/*"
+    }
+}
