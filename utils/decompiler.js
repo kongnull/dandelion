@@ -3,6 +3,8 @@ const js_beautify = require('js-beautify').js
 const { generate } = require('escodegen')
 const { parse } = require('acorn')
 const { walk } = require('acorn-walk')
+// 添加 ancestor 的显式导入
+const { ancestor } = require('acorn-walk')
 const MagicString = require('magic-string')
 const estraverse = require('estraverse')
 
@@ -97,10 +99,10 @@ function isWebpack5Format(code) {
 // 修复2：修改 AST 遍历方式（约 128-146 行）
 function renameParameters(code) {
     if (typeof code !== 'string') return code;
-    
+
     try {
         const ast = parse(code, {
-            ecmaVersion: 'latest',  // 改为字符串类型
+            ecmaVersion: 2022,  // 使用数字
             sourceType: 'script',
             allowReturnOutsideFunction: true,
             allowAwaitOutsideFunction: true,
@@ -111,14 +113,12 @@ function renameParameters(code) {
         const magicString = new MagicString(code);
 
         // 使用更安全的遍历方式
-        walk.ancestor(ast, {
-            Function(node, ancestors) {
+        walk(ast, {
+            Function(node) {
                 try {
-                    if (node.type === 'FunctionDeclaration' || 
+                    if (node.type === 'FunctionDeclaration' ||
                         node.type === 'FunctionExpression' ||
-                        node.type === 'ArrowFunctionExpression') 
-                    {
-                        // 添加参数有效性检查
+                        node.type === 'ArrowFunctionExpression') {
                         if (node.params && Array.isArray(node.params)) {
                             renameFunctionParams(node, magicString)
                         }
@@ -126,28 +126,32 @@ function renameParameters(code) {
                 } catch (e) {
                     console.warn('Parameter rename error:', e.message);
                 }
+            },
+            Property(node) {
+                // 处理对象方法简写语法
+                if (node.method && node.value.type === 'FunctionExpression') {
+                    renameFunctionParams(node.value, magicString)
+                }
             }
         });
 
-        // 增强代码规范化（新增Webpack模块包装处理）
+        // 增强代码规范化（修复闭合括号）
         let result = magicString.toString()
-            // 处理Webpack模块工厂函数
-            .replace(/(\d+):\s*\(([ertan]+),\s*(\w+),\s*\w+\)\s*=>\s*{/g, '/* WEBPACK MODULE $1 */ (function(__webpack_exports__, __webpack_require__) {')
+            // 精准匹配Webpack模块定义（支持带引号的模块ID）
+            .replace(/(['"]?)(\d+)\1:\s*\(([^)]+)\)\s*=>\s*{/g, '/* WEBPACK MODULE $2 */\n(function(__webpack_exports__, __webpack_require__) {')
+            // 处理闭包结尾（匹配不同压缩格式）
+            .replace(/\}\)([;,])/g, '});$1\n')
+            // 保留原始代码结构
             .replace(/([^;\n])(\n|$)/g, '$1;\n')
-            // 修复对象方法转换（处理生成器函数和异步函数）
-            .replace(/(\w+)\s*:\s*(async\s+)?function\s*(\*?)\s*([^(]*?)\s*{/g, (match, p1, p2, p3, p4) => {
-                // 保留原始缩进和空格
-                const asyncKeyword = p2 ? p2.trim() + ' ' : '';
-                const generatorStar = p3 ? p3.trim() + ' ' : '';
-                return `${asyncKeyword}function ${generatorStar}${p1}${p4} {`;
-            })
-            // 修复箭头函数格式
-            .replace(/=>\s*{/g, ' => {')
-            // 添加分号检查
-            .replace(/([^\s;}])$/gm, '$1;');
+            // 转换CommonJS导出语法（新增）
+            .replace(/a\.r\(t\)\s*,\s*a\.d\(t,\s*{\s*default:\s*\(\)=>(\w+)\s*}\);/g, 'module.exports = $1;')
+            // 转换动态加载语法（新增）
+            .replace(/\(0,\s*(\w+)\.(\w+)\)\(/g, '$1.$2(')
+            // 修复对象方法转换（保留冒号后的空格）
+            .replace(/(\w+)\s*:\s*function\s*([^(]*?)\s*{/g, '$1: function $2 {')  // 修改后的替换逻辑
 
-        // 添加临时调试日志
-        console.log('[DEBUG] Post-normalization code:', result.slice(0, 500));
+        // 添加调试日志
+        console.log('[DEBUG] Final transformed code:', result.slice(0, 1000));
         return result;
     } catch (error) {
         console.warn('Deep parsing failed:', error.message);
@@ -200,7 +204,6 @@ function renameFunctionParams(node, magicString) {
  * @returns {Array<string>} - 依赖列表
  */
 function extractDependencies(code) {
-    // 确保输入是字符串
     if (typeof code !== 'string') {
         console.warn('extractDependencies received non-string input:', code)
         return []
@@ -210,9 +213,12 @@ function extractDependencies(code) {
 
     try {
         const ast = parse(code, {
-            ecmaVersion: 'latest',
-            sourceType: 'module',
-            allowHashBang: true  // 添加此配置
+            ecmaVersion: 2022,  // 使用数字而不是字符串
+            sourceType: 'script',  // 改为script而不是module
+            allowHashBang: true,
+            allowReturnOutsideFunction: true,
+            allowAwaitOutsideFunction: true,
+            allowImportExportEverywhere: true
         });
 
         // 遍历AST查找require调用

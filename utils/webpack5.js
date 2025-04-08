@@ -11,7 +11,7 @@ const MagicString = require('magic-string')
 function parseWebpack5(code) {
     // 需要确保能正确提取这种格式的模块：
     // {91:(e,t,a)=>{...}, 5171:(e,t,a)=>{...}}
-    const moduleRegex = /(\d+):\s*\(([ertan]+),\s*(\w+),\s*\w+\)\s*=>\s*{/g;
+    const moduleRegex = /(\d+):\s*(?:function\s*\(([^)]*)\)|\(([^)]*)\)\s*=>|([a-zA-Z_$][\w$]*)\s*\(([^)]*)\))\s*{([\s\S]+?)}(?=,\s*\d+:|}\s*\)|\s*\]|$)/g;
     
     try {
         // 改进chunk正则，支持更多括号变体
@@ -25,9 +25,6 @@ function parseWebpack5(code) {
         console.log('Module object string:', modulesObjStr?.slice(0, 500) + '...');
 
         const modules = [];
-
-        // 强化模块正则表达式
-        const moduleRegex = /(\d+):\s*(?:function\s*\(([^)]*)\)|\(([^)]*)\)\s*=>)\s*{([\s\S]+?)}(?=,\s*\d+:|}\s*\)|\s*\]|$)/g;
 
         let moduleMatch;
         while ((moduleMatch = moduleRegex.exec(modulesObjStr)) !== null) {
