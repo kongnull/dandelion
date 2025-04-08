@@ -1,59 +1,26 @@
 {
-    "name": "electron-webpack-decompiler",
-    "version": "1.0.0",
-    "description": "A tool for decompiling Webpack-packed Electron applications",
-    "main": "main.js",
-    "scripts": {
-        "start": "electron .",
-        "pack": "electron-builder --dir",
-        "dist": "electron-builder",
-        "lint": "eslint ."
-    },
-    "keywords": [
-        "electron",
-        "webpack",
-        "decompiler"
-    ],
-    "author": "Your Name",
-    "license": "MIT",
-    "devDependencies": {
-        "electron": "^28.0.0",
-        "electron-builder": "^24.6.0",
-        "eslint": "^8.56.0",
-        "eslint-config-standard": "^17.1.0",
-        "eslint-plugin-import": "^2.29.0",
-        "eslint-plugin-node": "^11.1.0",
-        "eslint-plugin-promise": "^6.1.1"
-    },
-    "dependencies": {
-        "acorn": "^8.11.1",
-        "acorn-walk": "^8.2.0",
-        "escodegen": "^2.1.0",
-        "esprima": "^4.0.1",
-        "estraverse": "^5.3.0",
-        "js-beautify": "^1.14.7",
-        "magic-string": "^0.30.0",
-        "source-map": "^0.7.4",
-        "uuid": "^9.0.1"
-    },
-    "build": {
-        "appId": "com.example.webpackdecompiler",
-        "productName": "Webpack Decompiler",
-        "directories": {
-            "output": "dist"
-        },
-        "files": [
-            "**/*",
-            "!node_modules/**/*"
-        ],
-        "win": {
-            "target": "nsis"
-        },
-        "mac": {
-            "target": "dmg"
-        },
-        "linux": {
-            "target": "AppImage"
-        }
-    }
+  "name": "dandelion",
+  "version": "0.0.1",
+  "main": "main.js",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "start": "electron .",
+    "electron:serve": "concurrently -k \"vite dev --force\" \"wait-on http-get://localhost:5173 && electron .\""
+  },
+  "dependencies": {
+    "@electron/remote": "^2.1.2",
+    "electron": "^35.1.4",
+    "escodegen": "^2.1.0",
+    "esprima": "^4.0.1",
+    "estraverse": "^5.3.0",
+    "monaco-editor": "^0.52.2",
+    "vite": "^6.2.5",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.3",
+    "concurrently": "^8.2.2",
+    "wait-on": "^7.2.0"
+  }
 }
