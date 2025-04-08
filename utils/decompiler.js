@@ -19,17 +19,32 @@ async function decompileWebpack(input) {
         (input && typeof input.content === 'string' ? input.content : String(input));
 
     // 1. 尝试Webpack5解析
-    let webpack5Result = await tryParseWebpack5(code);
+    let webpack5Result = null;
+    try {
+        webpack5Result = await tryParseWebpack5(code);
+    } catch (e) {
+        console.error('Webpack 5 parsing failed:', e);
+    }
 
     // 2. 如果解析失败，回退到美化原始代码
     if (!webpack5Result) {
-        console.log('Falling back to basic beautification');
+        console.log('Falling back to basic beautification with enhanced processing');
+
+        // 增强的回退处理
+        const enhancedCode = code
+            // 替换Webpack特定语法
+            .replace(/a\.r\(t\)/g, '/* WEBPACK EXPORT */')
+            .replace(/a\.d\(t,\s*{([^}]+)}/g, '/* WEBPACK DEFINE $1 */')
+            // 美化代码
+            .replace(/([;,{])(\w)/g, '$1 $2');
+
         return {
-            code: beautifyJs(code),
+            code: beautifyJs(enhancedCode),
             modules: [],
-            warnings: ['Webpack 5 parsing failed, using fallback']
+            warnings: ['Webpack 5 parsing failed, using enhanced fallback']
         };
     }
+
 
     // 3. 处理模块（将处理逻辑移到函数内部）
     const processedModules = webpack5Result.modules.map(mod => ({
@@ -57,23 +72,36 @@ async function tryParseWebpack5(code) {
 
         const modules = parseWebpack5(code);
 
-        // 添加null检查
         if (!modules || !Array.isArray(modules)) {
             console.warn('No valid modules extracted from Webpack 5 code');
             return null;
         }
 
-        // 确保每个模块都有代码
-        const validModules = modules.filter(m => m && m.code);
-        if (validModules.length === 0) {
-            console.warn('All modules were empty');
-            return null;
+        // 处理每个模块
+        const processedModules = [];
+        for (const mod of modules) {
+            if (!mod || !mod.code) continue;
+
+            try {
+                processedModules.push({
+                    ...mod,
+                    code: beautifyJs(renameParameters(mod.code)),
+                    dependencies: extractDependencies(mod.code) || []
+                });
+            } catch (e) {
+                console.warn('Module processing failed:', e);
+                processedModules.push({
+                    ...mod,
+                    code: beautifyJs(mod.code),
+                    dependencies: []
+                });
+            }
         }
 
-        return {
-            code: generateMergedCode(validModules),
-            modules: validModules
-        };
+        return processedModules.length > 0 ? {
+            code: generateMergedCode(processedModules),
+            modules: processedModules
+        } : null;
     } catch (error) {
         console.error('Webpack 5 parsing failed:', error);
         return null;
@@ -94,15 +122,12 @@ function isWebpack5Format(code) {
  * @param {string} code - 模块代码
  * @returns {string} - 重命名后的代码
  */
-// 修复1：删除底部重复的 tryParseWebpack5 函数定义（约 373-389 行）
-// 原函数已在 50-72 行定义
-// 修复2：修改 AST 遍历方式（约 128-146 行）
 function renameParameters(code) {
     if (typeof code !== 'string') return code;
 
     try {
         const ast = parse(code, {
-            ecmaVersion: 2022,  // 使用数字
+            ecmaVersion: 'latest',
             sourceType: 'script',
             allowReturnOutsideFunction: true,
             allowAwaitOutsideFunction: true,
@@ -112,53 +137,44 @@ function renameParameters(code) {
 
         const magicString = new MagicString(code);
 
-        // 使用更安全的遍历方式
-        walk(ast, {
-            Function(node) {
+        ancestor(ast, {
+            Function(node, ancestors) {
                 try {
-                    if (node.type === 'FunctionDeclaration' ||
-                        node.type === 'FunctionExpression' ||
-                        node.type === 'ArrowFunctionExpression') {
-                        if (node.params && Array.isArray(node.params)) {
-                            renameFunctionParams(node, magicString)
-                        }
+                    if (node.params && Array.isArray(node.params)) {
+                        renameFunctionParams(node, magicString);
                     }
                 } catch (e) {
-                    console.warn('Parameter rename error:', e.message);
+                    console.warn('参数重命名错误:', e.message);
                 }
             },
-            Property(node) {
-                // 处理对象方法简写语法
+            Property(node, ancestors) {
                 if (node.method && node.value.type === 'FunctionExpression') {
-                    renameFunctionParams(node.value, magicString)
+                    renameFunctionParams(node.value, magicString);
                 }
             }
         });
 
-        // 增强代码规范化（修复闭合括号）
         let result = magicString.toString()
-            // 精准匹配Webpack模块定义（支持带引号的模块ID）
-            .replace(/(['"]?)(\d+)\1:\s*\(([^)]+)\)\s*=>\s*{/g, '/* WEBPACK MODULE $2 */\n(function(__webpack_exports__, __webpack_require__) {')
-            // 处理闭包结尾（匹配不同压缩格式）
-            .replace(/\}\)([;,])/g, '});$1\n')
-            // 保留原始代码结构
-            .replace(/([^;\n])(\n|$)/g, '$1;\n')
-            // 转换CommonJS导出语法（新增）
-            .replace(/a\.r\(t\)\s*,\s*a\.d\(t,\s*{\s*default:\s*\(\)=>(\w+)\s*}\);/g, 'module.exports = $1;')
-            // 转换动态加载语法（新增）
-            .replace(/\(0,\s*(\w+)\.(\w+)\)\(/g, '$1.$2(')
-            // 修复对象方法转换（保留冒号后的空格）
-            .replace(/(\w+)\s*:\s*function\s*([^(]*?)\s*{/g, '$1: function $2 {')  // 修改后的替换逻辑
+            // 模块包装替换
+            .replace(/(\d+):\s*\(([^)]+)\)\s*=>\s*{/g, '/* WEBPACK MODULE $1 */\n(function(module, exports, __webpack_require__) {')
+            // CommonJS导出替换
+            .replace(/(\w+)\.r\(\w+\)[^;]*?\.d\(\w+,\s*{\s*default:\s*\(\)\s*=>\s*(\w+)\s*}\s*\);/g, (_, p1, p2) => `\nmodule.exports = ${p2};`)
+            // 箭头函数转换
+            .replace(/(\bparam\d+)\s*=>/g, (_, p1) => `function(${p1})`)
+            // 方法调用替换
+            .replace(/\((\d+),\s*(\w+)\.(\w+)\)/g, '$2.$3')
+            // 事件处理参数
+            .replace(/on:\s*{\s*click:\s*function\(\w+\)/g, 'on: { click: function(event)')
+            // Vue回调参数
+            .replace(/callback:\s*function\(\w+\)/g, 'callback: function(value)');
 
-        // 添加调试日志
         console.log('[DEBUG] Final transformed code:', result.slice(0, 1000));
         return result;
     } catch (error) {
-        console.warn('Deep parsing failed:', error.message);
+        console.warn('AST解析失败:', error.message);
         return code;
     }
 }
-
 
 /**
  * 重命名函数参数
@@ -166,36 +182,58 @@ function renameParameters(code) {
  * @param {MagicString} magicString - MagicString实例
  */
 function renameFunctionParams(node, magicString) {
-    // Webpack常用的参数名映射
     const paramMap = {
-        'e': 'module',
-        't': 'exports',
-        'n': 'require',
-        'r': 'defineProperty',
-        'o': 'object',
-        'i': 'id',
-        'a': 'array',
-        's': 'string',
-        'l': 'load',
-        'd': 'define',
-        'c': 'cache',
-        'u': 'url',
-        'f': 'function',
-        'p': 'path',
-        'v': 'value',
-        'm': 'moduleId',
-        'h': 'hash',
-        'g': 'global'
-    }
+        // 新增回调函数专用映射
+        Callback: {
+            't': 'value',
+            'a': 'newValue'
+        },
+        EventHandler: { // 事件处理上下文
+            't': 'event',
+            'e': 'event'
+        },
+        Common: { // 通用上下文
+            'e': 'module',
+            't': 'exports',
+            'a': 'args',
+            'n': 'name',
+            'r': 'defineProperty',
+            'o': 'object',
+            'i': 'id',
+            's': 'string',
+            'l': 'load',
+            'd': 'define',
+            'c': 'cache',
+            'u': 'url',
+            'f': 'function',
+            'p': 'path',
+            'v': 'value',
+            'm': 'moduleId',
+            'h': 'hash',
+            'g': 'global'
+        }
+    };
 
-    node.params.forEach((param, index) => {
+    // 安全访问父节点属性
+    const isEventHandler = node.parent?.key?.name === 'click' || 
+                         node.parent?.key?.name === 'submit';
+
+    // 新增回调函数上下文检测
+    const isCallback = node.parent?.key?.name === 'callback';
+    const contextMap = isCallback ? paramMap.Callback : 
+                     isEventHandler ? paramMap.EventHandler : 
+                     paramMap.Common;
+
+    node.params.forEach((param) => {
         if (param.type === 'Identifier') {
-            const newName = paramMap[param.name] || `param${index}`
+            const contextMap = isEventHandler ? paramMap.EventHandler : paramMap.Common;
+            const newName = contextMap[param.name] || param.name;
+            
             if (newName !== param.name) {
-                magicString.overwrite(param.start, param.end, newName)
+                magicString.overwrite(param.start, param.end, newName);
             }
         }
-    })
+    });
 }
 
 /**
@@ -230,6 +268,13 @@ function extractDependencies(code) {
                     node.arguments.length > 0 &&
                     node.arguments[0].type === 'Literal') {
                     dependencies.add(node.arguments[0].value)
+                }
+
+                // 在estraverse.traverse中添加
+                if (node.type === 'ImportExpression') {
+                    if (node.source && node.source.value) {
+                        dependencies.add(node.source.value);
+                    }
                 }
             }
         })
